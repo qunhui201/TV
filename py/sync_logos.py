@@ -1,5 +1,6 @@
 import os
 import requests
+from urllib.parse import unquote
 
 # 配置路径
 BASE_PATH = os.getcwd()
@@ -20,18 +21,26 @@ def main():
         print(f"❌ 请求云端接口异常: {e}")
         return
 
-    # 1. 获取云端所有的文件名（通过 key 推导或者直接从 URL 中提取）
-    # 由于 KV 的 key 可能带后缀（如 CCTV1.png），我们建立一个映射：{ 文件名: 下载直链 }
+    # 1. 建立完美的映射：将云端 Key/URL 解析为干净的解码文件名
     cloud_files = {}
     for name_key, url in cloud_data.items():
-        # 从 URL 路径中安全解析出真实的文件名和后缀
-        filename = os.path.basename(url.split('?')[0])
+        # 优先使用 KV 的 Key 作为文件名进行解码清理（防止 URL 编码污染）
+        clean_key = unquote(unquote(str(name_key)))
+        
+        # 确保文件名带有 .png 后缀
+        if not clean_key.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+            filename = clean_key + ".png"
+        else:
+            filename = clean_key
+            
         cloud_files[filename] = url
 
     # 2. 获取本地 GitHub 仓库已有的台标文件
-    local_files = set(os.listdir(LOGO_DIR))
-    # 过滤掉隐藏文件
-    local_files = {f for f in local_files if not f.startswith('.')}
+    if os.path.exists(LOGO_DIR):
+        local_files = set(os.listdir(LOGO_DIR))
+        local_files = {f for f in local_files if not f.startswith('.')}
+    else:
+        local_files = set()
 
     cloud_file_set = set(cloud_files.keys())
 
@@ -48,8 +57,9 @@ def main():
             os.remove(file_path)
             print(f"🗑️ [删除本地] {filename}")
 
-    # 5. 执行下载（KV里新增的，GitHub同步下载保存）
+    # 5. 执行下载（保存为干净的正常名字）
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    success_count = 0
     for filename in to_download:
         url = cloud_files[filename]
         file_path = os.path.join(LOGO_DIR, filename)
@@ -58,13 +68,14 @@ def main():
             if res.status_code == 200:
                 with open(file_path, 'wb') as f:
                     f.write(res.content)
-                print(f"📥 [下载新增] {filename}")
+                print(f"📥 [下载保存] {filename}")
+                success_count += 1
             else:
                 print(f"⚠️ 下载失败 {filename}, 状态码: {res.status_code}")
         except Exception as e:
             print(f"❌ 下载异常 {filename}: {e}")
 
-    print("✨ 台标备份同步完成！")
+    print(f"✨ 台标同步完成！成功下载 {success_count} 个文件（名字已全部转为正常字符）。")
 
 if __name__ == "__main__":
     main()
