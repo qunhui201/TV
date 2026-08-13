@@ -3,7 +3,7 @@ name: 同步 Cloudflare KV 台标备份
 on:
   schedule:
     # 每天北京时间凌晨 3 点和下午 3 点各同步一次 (可自行修改 cron)
-    - cron: '0 */4 * * *'
+    - cron: '20 * * * *'
   workflow_dispatch: # 允许在 GitHub 页面手动点击同步
 
 jobs:
