@@ -1,10 +1,9 @@
 name: 同步 Cloudflare KV 台标备份
 
 on:
-  schedule:
-    # 每天北京时间凌晨 3 点和下午 3 点各同步一次 (可自行修改 cron)
-    - cron: '20 * * * *'
-  workflow_dispatch: # 允许在 GitHub 页面手动点击同步
+  repository_dispatch:
+    types: [sync_logos_event] # 监听来自 Cloudflare Worker 的呼叫
+  workflow_dispatch:          # 允许在网页手动点击
 
 jobs:
   sync:
@@ -31,13 +30,7 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 暂存所有变动
           git add logo/
-          
-          # 如果有未暂存的其他文件也可以一起 add .
-          git add .
-          
-          # 安全拉取防止冲突
           git pull origin main --rebase --autostash
           
           if git diff --staged --quiet; then
