@@ -31,11 +31,18 @@ jobs:
           git config --local user.name "github-actions[bot]"
           
           git add logo/
-          git pull origin main --rebase --autostash
           
+          # 如果没有改动，直接退出
           if git diff --staged --quiet; then
             echo "✨ 台标无变动，跳过推送。"
-          else
-            git commit -m "自动同步 Cloudflare KV 台标备份: $(date +'%Y-%m-%d %H:%M:%S')"
-            git push
+            exit 0
           fi
+          
+          git commit -m "自动同步 Cloudflare KV 台标备份: $(date +'%Y-%m-%d %H:%M:%S')"
+          
+          # 循环拉取并尝试推送，防止并发冲突导致失败（最多重试 5 次）
+          for i in {1..5}; do
+            git pull origin main --rebase --autostash && git push && break
+            echo "⚠️ 推送冲突，正在进行第 $i 次重试..."
+            sleep 3
+          done
