@@ -1,0 +1,44 @@
+name: EPG Merge and Update
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '15 0,12 * * *' # 每天定时运行（可根据需要调整时间）
+  workflow_dispatch: # 支持手动点击测试
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: 1. Python 环境准备
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: 2. 运行 Python 脚本下载并合并多源 EPG
+      run: |
+        python -u py/merge_epg.py
+
+    - name: 3. 自动提交并推送合并后的 EPG 到仓库
+      run: |
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # 添加生成的合并文件（假设你的合并文件叫 epg.xml）
+        git add epg.xml
+        
+        if ! git diff --cached --exit-code; then
+          git commit -m "Auto Merge & Update EPG: $(date +'%Y-%m-%d %H:%M:%S')"
+          git push origin main
+        else
+          echo "EPG 无变动，跳过推送。"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
