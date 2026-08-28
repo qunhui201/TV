@@ -5,7 +5,7 @@ import os
 # 定义你要合并的 EPG 远程源地址列表（至少2个，你可以自由增减）
 EPG_URLS = [
     "https://raw.githubusercontent.com/suzukua/epg/refs/heads/hidden/t.xml",
-    "https://example.com/another_epg_source.xml"  # 替换成你的第二个 EPG 源地址
+    "https://raw.githubusercontent.com/myhomebox/EPG/main/output/4g.xml"  # 替换成你的第二个 EPG 源地址
 ]
 
 def download_xml(url, output_path):
