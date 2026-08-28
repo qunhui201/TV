@@ -1,31 +1,43 @@
+import hashlib
+import json
+import requests
 import os
-from urllib.parse import unquote
 
-def rename_files():
-    logo_dir = "logo"
-    if not os.path.exists(logo_dir):
-        print(f"❌ 找不到 {logo_dir} 文件夹")
-        return
+JSON_URL = "https://tb.yubo.qzz.io/json"
+LOCAL_CACHE_PATH = "py/json_cache.json"  # 用于记录上一次内容的缓存文件
 
-    count = 0
-    for filename in os.listdir(logo_dir):
-        # 核心：将 URL 编码解码
-        decoded_name = unquote(filename)
+def check_content_changed():
+    try:
+        # 1. 获取远程最新的 JSON 内容
+        response = requests.get(JSON_URL, timeout=10)
+        remote_data = response.text
         
-        # 如果解码后的名字和原名不一样，说明需要重命名
-        if decoded_name != filename:
-            old_path = os.path.join(logo_dir, filename)
-            new_path = os.path.join(logo_dir, decoded_name)
+        # 2. 计算当前远程内容的 MD5
+        remote_md5 = hashlib.md5(remote_data.encode('utf-8')).hexdigest()
+        
+        # 3. 读取本地上一次记录的缓存文件
+        local_md5 = ""
+        if os.path.exists(LOCAL_CACHE_PATH):
+            with open(LOCAL_CACHE_PATH, 'r', encoding='utf-8') as f:
+                local_md5 = f.read().strip()
+                
+        # 4. 对比 MD5
+        if remote_md5 == local_md5:
+            print("✨ 远程 JSON 内容无变化，跳过同步。")
+            return False
             
-            # 检查重命名后是否会冲突
-            if not os.path.exists(new_path):
-                os.rename(old_path, new_path)
-                print(f"✅ 重命名: {filename} -> {decoded_name}")
-                count += 1
-            else:
-                print(f"⚠️ 跳过: {decoded_name} 已存在")
-    
-    print(f"✨ 处理完成，共重命名了 {count} 个文件")
+        # 5. 如果有变化，把新的 MD5 写入本地缓存
+        os.makedirs(os.path.dirname(LOCAL_CACHE_PATH), exist_ok=True)
+        with open(LOCAL_CACHE_PATH, 'w', encoding='utf-8') as f:
+            f.write(remote_md5)
+            
+        print("🚀 检测到远程 JSON 内容已更新，开始执行同步...")
+        return True
+    except Exception as e:
+        print(f"❌ 检查更新失败: {e}")
+        return False
 
 if __name__ == "__main__":
-    rename_files()
+    if check_content_changed():
+        # === 在这里写你原本的台标下载、处理、保存逻辑 ===
+        pass
