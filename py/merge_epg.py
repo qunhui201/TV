@@ -7,7 +7,7 @@ import gzip
 EPG_URLS = [
     # 51zmt 的经典国内节目单（含央视、卫视及部分省级频道详情，自动支持 .gz 解压）
     "http://epg.51zmt.top:8000/e1.xml.gz",
-    "https://epg.v1.mk/fy.xml.gz",
+    "https://epg.v1.mk/fy.xml",
     "https://raw.githubusercontent.com/myhomebox/EPG/main/output/4g.xml"  # 替换成你的第二个 EPG 源地址
 ]
 
