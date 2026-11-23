@@ -29,8 +29,11 @@ jobs:
             echo "❌ 错误：epg.xml 未生成"
             exit 1
           fi
-          # 保留 epg.xml，同时生成最高压缩比的 epg.xml.gz
+
+          # 生成 epg.xml.gz 并校验压缩包完整性
           gzip -9 -k -f epg.xml
+          gzip -t epg.xml.gz
+          echo "✅ epg.xml.gz 校验通过"
           ls -lh epg.xml epg.xml.gz
 
       - name: 3. 自动提交并推送合并后的 EPG 到仓库
@@ -39,8 +42,6 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
 
           git add epg.xml
-          # 如需把 epg.xml.gz 也提交到仓库，可取消下一行注释；不想污染 git 历史可保持注释（仍会上传 KV）
-          # git add epg.xml.gz
 
           if ! git diff --cached --exit-code; then
             git commit -m "Auto Merge & Update EPG: $(date +'%Y-%m-%d %H:%M:%S')"
@@ -86,7 +87,7 @@ jobs:
             local url="https://api.cloudflare.com/client/v4/accounts/${ACC_ID}/storage/kv/namespaces/${NS_ID}/values/${kv_key}"
             local response http_code body
 
-            response=$(curl -sS -w "\n%{http_code}" -X PUT "$url" \
+            response=$(curl -sS --retry 2 --retry-delay 2 -w "\n%{http_code}" -X PUT "$url" \
               -H "Authorization: Bearer ${TOKEN}" \
               -H "Content-Type: ${content_type}" \
               --data-binary @"$file_path")
