@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-   - cron: '15 16,18,20,22,0,2,4,6,8,10,12,14 * * *'
+    - cron: '15 16,18,20,22,0,2,4,6,8,10,12,14 * * *'
   workflow_dispatch:
 
 jobs:
@@ -13,81 +13,94 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      
+
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: 1. Python 环境准备
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: 1. Python 环境准备
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: 2. 运行 Python 脚本下载并合并多源 EPG
-      run: |
-        python -u py/merge_epg.py
+      - name: 2. 运行 Python 脚本下载并合并多源 EPG
+        run: |
+          python -u py/merge_epg.py
+          if [ ! -f epg.xml ]; then
+            echo "❌ 错误：epg.xml 未生成"
+            exit 1
+          fi
+          # 保留 epg.xml，同时生成最高压缩比的 epg.xml.gz
+          gzip -9 -k -f epg.xml
+          ls -lh epg.xml epg.xml.gz
 
-    - name: 3. 自动提交并推送合并后的 EPG 到仓库
-      run: |
-        git config --local user.name "github-actions[bot]"
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        
-        git add epg.xml
-        
-        if ! git diff --cached --exit-code; then
-          git commit -m "Auto Merge & Update EPG: $(date +'%Y-%m-%d %H:%M:%S')"
-          git push origin main
-        else
-          echo "EPG 无变动，跳过推送。"
-        fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 3. 自动提交并推送合并后的 EPG 到仓库
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
 
-    # ========== 新增：上传到 Cloudflare KV ==========
-    - name: 4. 上传 epg.xml 到 Cloudflare KV
-      if: success()
-      env:
+          git add epg.xml
+          # 如需把 epg.xml.gz 也提交到仓库，可取消下一行注释；不想污染 git 历史可保持注释（仍会上传 KV）
+          # git add epg.xml.gz
+
+          if ! git diff --cached --exit-code; then
+            git commit -m "Auto Merge & Update EPG: $(date +'%Y-%m-%d %H:%M:%S')"
+            git push origin main
+          else
+            echo "EPG 无变动，跳过推送。"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 4. 上传 epg.xml 和 epg.xml.gz 到 Cloudflare KV
+        if: success()
+        env:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
-      run: |
+        run: |
           set -e
-          echo "正在上传 epg.xml 到 Cloudflare KV..."
 
-          if [ ! -f epg.xml ]; then
-            echo "❌ 错误：epg.xml 不存在"
-            exit 1
-          fi
-
-          # 去除可能误复制的空格和换行
           ACC_ID=$(printf '%s' "$CF_ACCOUNT_ID" | tr -d '[:space:]')
           NS_ID=$(printf '%s' "$CF_KV_NAMESPACE_ID" | tr -d '[:space:]')
           TOKEN=$(printf '%s' "$CF_API_TOKEN" | tr -d '[:space:]')
 
           if [ -z "$ACC_ID" ] || [ -z "$NS_ID" ] || [ -z "$TOKEN" ]; then
-            echo "❌ Secret 为空：ACC_ID长度=${#ACC_ID}, NS_ID长度=${#NS_ID}, TOKEN长度=${#TOKEN}"
+            echo "❌ Secret 为空，请检查 CF_ACCOUNT_ID / CF_KV_NAMESPACE_ID / CF_API_TOKEN"
             exit 1
           fi
 
-          echo "校验通过 -> Account ID 长度: ${#ACC_ID}, Namespace ID 长度: ${#NS_ID}"
-          FILE_SIZE=$(du -h epg.xml | cut -f1)
-          echo "文件大小: $FILE_SIZE"
+          upload_to_kv() {
+            local file_path="$1"
+            local kv_key="$2"
+            local content_type="$3"
 
-          URL="https://api.cloudflare.com/client/v4/accounts/${ACC_ID}/storage/kv/namespaces/${NS_ID}/values/epg.xml"
+            if [ ! -f "$file_path" ]; then
+              echo "❌ 文件不存在: $file_path"
+              exit 1
+            fi
 
-          RESPONSE=$(curl -sS -w "\n%{http_code}" -X PUT "$URL" \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Content-Type: text/xml" \
-            --data-binary @epg.xml)
+            local file_size
+            file_size=$(du -h "$file_path" | cut -f1)
+            echo "正在上传 [$file_path] ($file_size) -> KV Key: [$kv_key]..."
 
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
+            local url="https://api.cloudflare.com/client/v4/accounts/${ACC_ID}/storage/kv/namespaces/${NS_ID}/values/${kv_key}"
+            local response http_code body
 
-          echo "HTTP 状态码: $HTTP_CODE"
-          echo "响应内容: $BODY"
+            response=$(curl -sS -w "\n%{http_code}" -X PUT "$url" \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Content-Type: ${content_type}" \
+              --data-binary @"$file_path")
 
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "❌ 上传失败！"
-            exit 1
-          fi
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
 
-          echo "✅ 上传成功！"
+            echo "[$kv_key] HTTP 状态码: $http_code | 响应: $body"
+            if [ "$http_code" != "200" ]; then
+              echo "❌ 上传 [$kv_key] 失败！"
+              exit 1
+            fi
+            echo "✅ [$kv_key] 上传成功！"
+          }
+
+          upload_to_kv "epg.xml" "epg.xml" "application/xml; charset=utf-8"
+          upload_to_kv "epg.xml.gz" "epg.xml.gz" "application/gzip"
