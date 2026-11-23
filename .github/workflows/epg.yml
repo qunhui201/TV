@@ -44,38 +44,50 @@ jobs:
 
     # ========== 新增：上传到 Cloudflare KV ==========
     - name: 4. 上传 epg.xml 到 Cloudflare KV
-      if: success()   # 只有前面步骤成功才执行
+      if: success()
       env:
-        CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-        CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
       run: |
-        echo "正在上传 epg.xml 到 Cloudflare KV..."
-        
-        # 检查文件是否存在
-        if [ ! -f epg.xml ]; then
-          echo "错误：epg.xml 不存在"
-          exit 1
-        fi
-        
-        FILE_SIZE=$(du -h epg.xml | cut -f1)
-        echo "文件大小: $FILE_SIZE"
-        
-        # 使用 Cloudflare API 上传（PUT value）
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT \
-          "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${CF_KV_NAMESPACE_ID}/values/epg.xml" \
-          -H "Authorization: Bearer ${CF_API_TOKEN}" \
-          -H "Content-Type: text/xml" \
-          --data-binary @epg.xml)
-        
-        HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-        BODY=$(echo "$RESPONSE" | sed '$d')
-        
-        if [ "$HTTP_CODE" = "200" ]; then
-          echo "✅ 上传成功！HTTP $HTTP_CODE"
-          echo "$BODY"
-        else
-          echo "❌ 上传失败！HTTP $HTTP_CODE"
-          echo "$BODY"
-          exit 1
-        fi
+          set -e
+          echo "正在上传 epg.xml 到 Cloudflare KV..."
+
+          if [ ! -f epg.xml ]; then
+            echo "❌ 错误：epg.xml 不存在"
+            exit 1
+          fi
+
+          # 去除可能误复制的空格和换行
+          ACC_ID=$(printf '%s' "$CF_ACCOUNT_ID" | tr -d '[:space:]')
+          NS_ID=$(printf '%s' "$CF_KV_NAMESPACE_ID" | tr -d '[:space:]')
+          TOKEN=$(printf '%s' "$CF_API_TOKEN" | tr -d '[:space:]')
+
+          if [ -z "$ACC_ID" ] || [ -z "$NS_ID" ] || [ -z "$TOKEN" ]; then
+            echo "❌ Secret 为空：ACC_ID长度=${#ACC_ID}, NS_ID长度=${#NS_ID}, TOKEN长度=${#TOKEN}"
+            exit 1
+          fi
+
+          echo "校验通过 -> Account ID 长度: ${#ACC_ID}, Namespace ID 长度: ${#NS_ID}"
+          FILE_SIZE=$(du -h epg.xml | cut -f1)
+          echo "文件大小: $FILE_SIZE"
+
+          URL="https://api.cloudflare.com/client/v4/accounts/${ACC_ID}/storage/kv/namespaces/${NS_ID}/values/epg.xml"
+
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X PUT "$URL" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: text/xml" \
+            --data-binary @epg.xml)
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP 状态码: $HTTP_CODE"
+          echo "响应内容: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ 上传失败！"
+            exit 1
+          fi
+
+          echo "✅ 上传成功！"
